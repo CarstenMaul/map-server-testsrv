@@ -97,13 +97,89 @@ Response:
 4. Monitor authentication logs
 5. Use environment variables for sensitive configuration
 
+## Testing the MCP Server
+
+### Manual Testing
+
+Use the included test script:
+
+```bash
+# Test with default settings
+./test_mcp.sh
+
+# Test with custom host and API key
+./test_mcp.sh your-server.com:8000 your-api-key
+```
+
+### Correct MCP Request Format
+
+MCP requires JSON-RPC 2.0 format. **Do not send empty requests!**
+
+#### 1. Initialize Connection
+```bash
+curl -X POST "https://your-server.com/mcp" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "x-api-key: your-api-key" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-06-18",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "copilot-studio",
+        "version": "1.0.0"
+      }
+    }
+  }'
+```
+
+#### 2. List Available Tools
+```bash
+curl -X POST "https://your-server.com/mcp" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/list"
+  }'
+```
+
+#### 3. Call a Tool
+```bash
+curl -X POST "https://your-server.com/mcp" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your-api-key" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "get_quote_of_the_day",
+      "arguments": {
+        "category": "random"
+      }
+    }
+  }'
+```
+
 ## Troubleshooting
 
 ### Common Issues
 
-1. **401 Unauthorized**: Missing `x-api-key` header
-2. **403 Forbidden**: Invalid API key
-3. **Connection Failed**: Check host, port, and SSL configuration
+1. **"Load failed" / TypeError**: Empty request body - MCP requires proper JSON-RPC format
+2. **401 Unauthorized**: Missing `x-api-key` header
+3. **403 Forbidden**: Invalid API key
+4. **Connection Failed**: Check host, port, and SSL configuration
+
+### Microsoft Copilot Studio Specific
+
+- Ensure custom connector is configured with **Base URL**: `/mcp`
+- Use **Authentication Type**: `API Key` in header `x-api-key`
+- The server supports the `x-ms-agentic-protocol: "mcp-streamable-1.0"` header
 
 ### Debug Mode
 
