@@ -71,4 +71,25 @@ curl -X POST "http://$HOST/mcp" \
   }' | jq . || echo "Quote tool failed"
 echo ""
 
+# Test 5: Query parameter authentication
+echo "5. Testing query parameter authentication..."
+curl -X POST "http://$HOST/mcp?api-key=$API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 4,
+    "method": "tools/call",
+    "params": {
+      "name": "get_random_quote",
+      "arguments": {}
+    }
+  }' | jq . || echo "Query auth failed"
+echo ""
+
+# Test 6: Health endpoint with query auth
+echo "6. Testing health endpoint with query auth..."
+curl -s "http://$HOST/health?key=$API_KEY" | jq . || echo "Health with query auth failed"
+echo ""
+
 echo "Testing complete!"

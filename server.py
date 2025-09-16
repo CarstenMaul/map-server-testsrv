@@ -154,6 +154,16 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
                 request.headers.get("api-key")
             )
 
+        if not client_api_key:
+            # Check query parameters as fallback
+            query_params = request.query_params
+            client_api_key = (
+                query_params.get("api-key") or
+                query_params.get("apikey") or
+                query_params.get("key") or
+                query_params.get("token")
+            )
+
         # Check if API key is required but missing
         if self.require_auth and not client_api_key:
             self.logger.warning(f"Missing API key for request to {request.url.path}")
@@ -161,8 +171,8 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
                 status_code=401,
                 content={
                     "error": "Unauthorized",
-                    "message": "API key required. Please provide x-api-key header.",
-                    "details": "This MCP server requires authentication via x-api-key header for Microsoft Copilot Studio compatibility."
+                    "message": "API key required. Please provide x-api-key header or api-key query parameter.",
+                    "details": "This MCP server requires authentication via x-api-key header (recommended for Copilot Studio) or query parameters (api-key, apikey, key, token)."
                 }
             )
 
@@ -399,7 +409,7 @@ if __name__ == "__main__":
                 "service": "mcp-server-testsrv",
                 "version": "1.0.0",
                 "protocol": "streamable-http",
-                "authentication": "x-api-key header supported" if require_auth else "disabled",
+                "authentication": "x-api-key header or query parameters supported" if require_auth else "disabled",
                 "copilot_studio_compatible": True
             })
 
