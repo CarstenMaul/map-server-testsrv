@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse
+from starlette.routing import Route
 import json
 import time
 import os
@@ -389,18 +390,22 @@ if __name__ == "__main__":
         # Get the FastMCP HTTP app
         app = mcp.http_app()
 
-        # Add health check endpoint manually
-        @app.get("/health")
-        async def health_check():
+        # Create health check endpoint function
+        async def health_check(request):
             """Health check endpoint for monitoring and load balancers."""
-            return {
+            _ = request  # Starlette requires request parameter
+            return JSONResponse({
                 "status": "healthy",
                 "service": "mcp-server-testsrv",
                 "version": "1.0.0",
                 "protocol": "streamable-http",
                 "authentication": "x-api-key header supported" if require_auth else "disabled",
                 "copilot_studio_compatible": True
-            }
+            })
+
+        # Add health route to the app's router
+        health_route = Route("/health", health_check, methods=["GET"])
+        app.router.routes.append(health_route)
 
         # Add API key authentication middleware (must be added first)
         app.add_middleware(ApiKeyMiddleware, api_key=api_key, require_auth=require_auth)
