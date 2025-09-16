@@ -10,9 +10,10 @@ from typing import Literal
 from fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 import json
 import time
+import os
 
 class DebugMiddleware(BaseHTTPMiddleware):
     """Middleware for logging all HTTP requests and responses with headers."""
@@ -123,6 +124,65 @@ class DebugMiddleware(BaseHTTPMiddleware):
             self.logger.info("=" * 80)
             raise
 
+class ApiKeyMiddleware(BaseHTTPMiddleware):
+    """Middleware for API key authentication compatible with Microsoft Copilot Studio."""
+
+    def __init__(self, app, api_key: str = None, require_auth: bool = False):
+        super().__init__(app)
+        self.api_key = api_key
+        self.require_auth = require_auth
+        self.logger = logging.getLogger("mcp.auth")
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip authentication for health checks and non-MCP endpoints
+        if request.url.path in ["/", "/health", "/ping"]:
+            return await call_next(request)
+
+        # Skip authentication if not required
+        if not self.require_auth:
+            return await call_next(request)
+
+        # Extract API key from x-api-key header (Copilot Studio standard)
+        client_api_key = request.headers.get("x-api-key")
+
+        if not client_api_key:
+            # Also check alternative header names for compatibility
+            client_api_key = (
+                request.headers.get("X-API-Key") or
+                request.headers.get("Authorization", "").replace("Bearer ", "") or
+                request.headers.get("api-key")
+            )
+
+        # Check if API key is required but missing
+        if self.require_auth and not client_api_key:
+            self.logger.warning(f"Missing API key for request to {request.url.path}")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "Unauthorized",
+                    "message": "API key required. Please provide x-api-key header.",
+                    "details": "This MCP server requires authentication via x-api-key header for Microsoft Copilot Studio compatibility."
+                }
+            )
+
+        # Validate API key if provided and required
+        if self.require_auth and self.api_key and client_api_key != self.api_key:
+            self.logger.warning(f"Invalid API key for request to {request.url.path}")
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "error": "Forbidden",
+                    "message": "Invalid API key provided.",
+                    "details": "The API key provided does not match the expected value."
+                }
+            )
+
+        # Log successful authentication
+        if client_api_key:
+            self.logger.info(f"Authenticated request to {request.url.path}")
+
+        return await call_next(request)
+
 # Static list of quotes
 QUOTES = [
     {
@@ -210,6 +270,19 @@ QUOTES = [
 # Initialize FastMCP server
 mcp = FastMCP("mcp-server-testsrv")
 
+# Add health check endpoint for monitoring
+@mcp.app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring and load balancers."""
+    return {
+        "status": "healthy",
+        "service": "mcp-server-testsrv",
+        "version": "1.0.0",
+        "protocol": "streamable-http",
+        "authentication": "x-api-key header supported",
+        "copilot_studio_compatible": True
+    }
+
 @mcp.tool
 def get_quote_of_the_day(category: Literal["random", "inspirational"] = "random") -> dict:
     """
@@ -288,14 +361,31 @@ if __name__ == "__main__":
     parser.add_argument("--ssl-cert", help="Path to SSL certificate file")
     parser.add_argument("--ssl-key", help="Path to SSL private key file")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging of all HTTP requests and responses")
+    parser.add_argument("--api-key", help="API key for authentication (can also be set via MCP_API_KEY environment variable)")
+    parser.add_argument("--require-auth", action="store_true", help="Require API key authentication for all MCP requests")
 
     args = parser.parse_args()
+
+    # Get API key from command line or environment variable
+    api_key = args.api_key or os.getenv("MCP_API_KEY")
+    require_auth = args.require_auth or os.getenv("MCP_REQUIRE_AUTH", "").lower() in ("true", "1", "yes")
 
     # Set up logging
     setup_logging(debug_enabled=args.debug)
 
     if args.debug:
         print("🐛 Debug mode enabled - all HTTP requests and responses will be logged")
+
+    # Display authentication status
+    if require_auth:
+        if api_key:
+            print("🔐 API key authentication enabled")
+            print("💡 Clients must provide x-api-key header for Copilot Studio compatibility")
+        else:
+            print("⚠️  Authentication required but no API key configured!")
+            print("💡 Set MCP_API_KEY environment variable or use --api-key parameter")
+    else:
+        print("🔓 Authentication disabled - server accepts all requests")
 
     # Configure SSL if certificates are provided
     if args.ssl_cert and args.ssl_key:
@@ -312,7 +402,10 @@ if __name__ == "__main__":
         # Get the FastMCP HTTP app
         app = mcp.http_app()
 
-        # Add debug middleware if debug is enabled
+        # Add API key authentication middleware (must be added first)
+        app.add_middleware(ApiKeyMiddleware, api_key=api_key, require_auth=require_auth)
+
+        # Add debug middleware if debug is enabled (should be last to log everything)
         if args.debug:
             app.add_middleware(DebugMiddleware, debug_enabled=True)
 

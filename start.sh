@@ -6,11 +6,14 @@
 #   ./start.sh                    # Start normally
 #   DEBUG=true ./start.sh         # Start with debug logging
 #   HOST=127.0.0.1 PORT=9000 ./start.sh  # Custom host/port
+#   MCP_API_KEY=secret123 MCP_REQUIRE_AUTH=true ./start.sh  # With authentication
 #
 # Environment variables:
 #   HOST         - Server host (default: 0.0.0.0)
 #   PORT         - Server port (default: 8000)
 #   DEBUG        - Enable debug logging (default: false)
+#   MCP_API_KEY  - API key for authentication (optional)
+#   MCP_REQUIRE_AUTH - Require authentication (default: false)
 #   SSL_CERT_PATH - Path to SSL certificate (default: ./ssl/fullchain.pem)
 #   SSL_KEY_PATH  - Path to SSL private key (default: ./ssl/privkey.pem)
 
