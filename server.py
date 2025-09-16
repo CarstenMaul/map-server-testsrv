@@ -140,6 +140,7 @@ def get_quotes_count() -> dict:
 if __name__ == "__main__":
     import argparse
     import sys
+    import uvicorn
 
     parser = argparse.ArgumentParser(description="MCP Server for Quote of the Day")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
@@ -150,21 +151,26 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Configure SSL if certificates are provided
-    ssl_context = None
     if args.ssl_cert and args.ssl_key:
-        import ssl
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain(args.ssl_cert, args.ssl_key)
         print(f"Starting MCP server with SSL on https://{args.host}:{args.port}")
+        uvicorn_kwargs = {
+            "ssl_keyfile": args.ssl_key,
+            "ssl_certfile": args.ssl_cert
+        }
     else:
         print(f"Starting MCP server on http://{args.host}:{args.port}")
+        uvicorn_kwargs = {}
 
     try:
-        mcp.run(
-            transport="streamable-http",
+        # Get the FastMCP HTTP app
+        app = mcp.http_app()
+
+        # Run with uvicorn directly for SSL support
+        uvicorn.run(
+            app,
             host=args.host,
             port=args.port,
-            ssl_context=ssl_context
+            **uvicorn_kwargs
         )
     except KeyboardInterrupt:
         print("\nServer stopped by user")
