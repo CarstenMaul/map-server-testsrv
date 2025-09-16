@@ -39,28 +39,43 @@ class DebugMiddleware(BaseHTTPMiddleware):
         for name, value in request.headers.items():
             self.logger.info(f"  {name}: {value}")
 
-        # Log request body if present
+        # For MCP requests, try to log the body but don't interfere with streaming
+        body_logged = False
         if request.method in ["POST", "PUT", "PATCH"]:
             try:
-                body = await request.body()
-                if body:
-                    try:
-                        # Try to parse as JSON for pretty printing
-                        json_body = json.loads(body.decode())
-                        self.logger.info("📝 REQUEST BODY (JSON):")
-                        self.logger.info(json.dumps(json_body, indent=2))
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        # Fall back to raw body
-                        self.logger.info("📝 REQUEST BODY (RAW):")
-                        self.logger.info(f"  {body}")
+                # Only read body for non-streaming requests or initial MCP requests
+                content_type = request.headers.get("content-type", "")
+                accept = request.headers.get("accept", "")
 
-                # Recreate request with body for downstream processing
-                async def receive():
-                    return {"type": "http.request", "body": body}
+                # Check if this is likely a streaming request
+                is_streaming_request = (
+                    "text/event-stream" in accept or
+                    "stream" in content_type.lower()
+                )
 
-                request._receive = receive
+                if not is_streaming_request:
+                    # Safe to read body for non-streaming requests
+                    body = await request.body()
+                    if body:
+                        try:
+                            # Try to parse as JSON for pretty printing
+                            json_body = json.loads(body.decode())
+                            self.logger.info("📝 REQUEST BODY (JSON):")
+                            self.logger.info(json.dumps(json_body, indent=2))
+                            body_logged = True
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            # Fall back to raw body
+                            self.logger.info("📝 REQUEST BODY (RAW):")
+                            self.logger.info(f"  {body}")
+                            body_logged = True
+                else:
+                    self.logger.info("📝 REQUEST BODY: (streaming request - body not logged to avoid interference)")
+
             except Exception as e:
                 self.logger.error(f"❌ Error reading request body: {e}")
+
+        if not body_logged and request.method in ["POST", "PUT", "PATCH"]:
+            self.logger.info("📝 REQUEST BODY: (not logged)")
 
         # Process request
         try:
@@ -76,8 +91,11 @@ class DebugMiddleware(BaseHTTPMiddleware):
             for name, value in response.headers.items():
                 self.logger.info(f"  {name}: {value}")
 
-            # Log response body if possible
-            if hasattr(response, 'body') and response.body:
+            # For streaming responses, don't try to read the body
+            response_content_type = response.headers.get("content-type", "")
+            if "text/event-stream" in response_content_type:
+                self.logger.info("📋 RESPONSE BODY: (Server-Sent Events stream - not logged)")
+            elif hasattr(response, 'body') and response.body:
                 try:
                     body_str = response.body.decode() if isinstance(response.body, bytes) else str(response.body)
                     try:
@@ -93,6 +111,8 @@ class DebugMiddleware(BaseHTTPMiddleware):
                         self.logger.info(f"  {body_str}")
                 except Exception as e:
                     self.logger.info(f"📋 RESPONSE BODY: (unable to read: {e})")
+            else:
+                self.logger.info("📋 RESPONSE BODY: (empty or no body)")
 
             self.logger.info("=" * 80)
             return response
