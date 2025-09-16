@@ -56,35 +56,18 @@ The server automatically exposes these MCP tools:
 
 Use the test feature with your API key to verify the connection works.
 
-## Authentication Methods
+## Headers Required
 
-### Header Authentication (Recommended)
-
-When connecting from Copilot Studio, include the API key in headers:
+When connecting from Copilot Studio, the following header must be included:
 
 ```
 x-api-key: your-secret-key
 ```
 
-Alternative header formats supported:
-- `X-API-Key: your-secret-key`
+The server also accepts these alternative header formats for compatibility:
+- `X-API-Key`
 - `Authorization: Bearer your-secret-key`
-- `api-key: your-secret-key`
-
-### Query Parameter Authentication
-
-For systems that cannot use custom headers, query parameters are supported:
-
-```
-GET /health?api-key=your-secret-key
-POST /mcp?key=your-secret-key
-```
-
-Supported query parameter names:
 - `api-key`
-- `apikey`
-- `key`
-- `token`
 
 ## Health Check
 
@@ -183,26 +166,6 @@ curl -X POST "https://your-server.com/mcp" \
   }'
 ```
 
-#### 4. Using Query Parameter Authentication
-```bash
-# Alternative authentication via query parameters
-curl -X POST "https://your-server.com/mcp?api-key=your-api-key" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-      "protocolVersion": "2025-06-18",
-      "capabilities": {},
-      "clientInfo": {
-        "name": "query-auth-client",
-        "version": "1.0.0"
-      }
-    }
-  }'
-```
 
 ## Troubleshooting
 
