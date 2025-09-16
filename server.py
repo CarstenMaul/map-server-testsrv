@@ -270,19 +270,6 @@ QUOTES = [
 # Initialize FastMCP server
 mcp = FastMCP("mcp-server-testsrv")
 
-# Add health check endpoint for monitoring
-@mcp.app.get("/health")
-async def health_check():
-    """Health check endpoint for monitoring and load balancers."""
-    return {
-        "status": "healthy",
-        "service": "mcp-server-testsrv",
-        "version": "1.0.0",
-        "protocol": "streamable-http",
-        "authentication": "x-api-key header supported",
-        "copilot_studio_compatible": True
-    }
-
 @mcp.tool
 def get_quote_of_the_day(category: Literal["random", "inspirational"] = "random") -> dict:
     """
@@ -401,6 +388,19 @@ if __name__ == "__main__":
     try:
         # Get the FastMCP HTTP app
         app = mcp.http_app()
+
+        # Add health check endpoint manually
+        @app.get("/health")
+        async def health_check():
+            """Health check endpoint for monitoring and load balancers."""
+            return {
+                "status": "healthy",
+                "service": "mcp-server-testsrv",
+                "version": "1.0.0",
+                "protocol": "streamable-http",
+                "authentication": "x-api-key header supported" if require_auth else "disabled",
+                "copilot_studio_compatible": True
+            }
 
         # Add API key authentication middleware (must be added first)
         app.add_middleware(ApiKeyMiddleware, api_key=api_key, require_auth=require_auth)
