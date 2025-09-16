@@ -5,8 +5,103 @@ Provides a tool to get a random quote from a static list of quotes.
 """
 
 import random
+import logging
 from typing import Literal
 from fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+import json
+import time
+
+class DebugMiddleware(BaseHTTPMiddleware):
+    """Middleware for logging all HTTP requests and responses with headers."""
+
+    def __init__(self, app, debug_enabled: bool = False):
+        super().__init__(app)
+        self.debug_enabled = debug_enabled
+        self.logger = logging.getLogger("mcp.debug")
+
+    async def dispatch(self, request: Request, call_next):
+        if not self.debug_enabled:
+            return await call_next(request)
+
+        start_time = time.time()
+
+        # Log request
+        self.logger.info("=" * 80)
+        self.logger.info(f"🔵 INCOMING REQUEST: {request.method} {request.url}")
+        self.logger.info(f"📍 Path: {request.url.path}")
+        self.logger.info(f"🔗 Query: {request.url.query}")
+
+        # Log request headers
+        self.logger.info("📥 REQUEST HEADERS:")
+        for name, value in request.headers.items():
+            self.logger.info(f"  {name}: {value}")
+
+        # Log request body if present
+        if request.method in ["POST", "PUT", "PATCH"]:
+            try:
+                body = await request.body()
+                if body:
+                    try:
+                        # Try to parse as JSON for pretty printing
+                        json_body = json.loads(body.decode())
+                        self.logger.info("📝 REQUEST BODY (JSON):")
+                        self.logger.info(json.dumps(json_body, indent=2))
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        # Fall back to raw body
+                        self.logger.info("📝 REQUEST BODY (RAW):")
+                        self.logger.info(f"  {body}")
+
+                # Recreate request with body for downstream processing
+                async def receive():
+                    return {"type": "http.request", "body": body}
+
+                request._receive = receive
+            except Exception as e:
+                self.logger.error(f"❌ Error reading request body: {e}")
+
+        # Process request
+        try:
+            response = await call_next(request)
+            process_time = time.time() - start_time
+
+            # Log response
+            self.logger.info(f"🟢 RESPONSE: {response.status_code}")
+            self.logger.info(f"⏱️  Processing time: {process_time:.3f}s")
+
+            # Log response headers
+            self.logger.info("📤 RESPONSE HEADERS:")
+            for name, value in response.headers.items():
+                self.logger.info(f"  {name}: {value}")
+
+            # Log response body if possible
+            if hasattr(response, 'body') and response.body:
+                try:
+                    body_str = response.body.decode() if isinstance(response.body, bytes) else str(response.body)
+                    try:
+                        # Try to parse as JSON for pretty printing
+                        json_body = json.loads(body_str)
+                        self.logger.info("📋 RESPONSE BODY (JSON):")
+                        self.logger.info(json.dumps(json_body, indent=2))
+                    except json.JSONDecodeError:
+                        # Fall back to raw body (truncated if too long)
+                        if len(body_str) > 1000:
+                            body_str = body_str[:1000] + "... (truncated)"
+                        self.logger.info("📋 RESPONSE BODY (RAW):")
+                        self.logger.info(f"  {body_str}")
+                except Exception as e:
+                    self.logger.info(f"📋 RESPONSE BODY: (unable to read: {e})")
+
+            self.logger.info("=" * 80)
+            return response
+
+        except Exception as e:
+            process_time = time.time() - start_time
+            self.logger.error(f"❌ REQUEST FAILED after {process_time:.3f}s: {e}")
+            self.logger.info("=" * 80)
+            raise
 
 # Static list of quotes
 QUOTES = [
@@ -137,6 +232,31 @@ def get_quotes_count() -> dict:
         "description": "Total number of quotes available in the collection"
     }
 
+def setup_logging(debug_enabled: bool = False):
+    """Configure logging for the application."""
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+    # Configure debug logger if debug is enabled
+    if debug_enabled:
+        debug_logger = logging.getLogger("mcp.debug")
+        debug_logger.setLevel(logging.INFO)
+
+        # Create console handler with a different format for debug logs
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - DEBUG - %(message)s', datefmt='%H:%M:%S')
+        console_handler.setFormatter(formatter)
+
+        # Remove any existing handlers and add our custom one
+        debug_logger.handlers.clear()
+        debug_logger.addHandler(console_handler)
+        debug_logger.propagate = False  # Don't propagate to root logger
+
 if __name__ == "__main__":
     import argparse
     import sys
@@ -147,8 +267,15 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument("--ssl-cert", help="Path to SSL certificate file")
     parser.add_argument("--ssl-key", help="Path to SSL private key file")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging of all HTTP requests and responses")
 
     args = parser.parse_args()
+
+    # Set up logging
+    setup_logging(debug_enabled=args.debug)
+
+    if args.debug:
+        print("🐛 Debug mode enabled - all HTTP requests and responses will be logged")
 
     # Configure SSL if certificates are provided
     if args.ssl_cert and args.ssl_key:
@@ -164,6 +291,10 @@ if __name__ == "__main__":
     try:
         # Get the FastMCP HTTP app
         app = mcp.http_app()
+
+        # Add debug middleware if debug is enabled
+        if args.debug:
+            app.add_middleware(DebugMiddleware, debug_enabled=True)
 
         # Run with uvicorn directly for SSL support
         uvicorn.run(

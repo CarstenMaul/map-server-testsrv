@@ -1,6 +1,18 @@
 #!/bin/bash
 # Start script for mcp-server-testsrv with SSL support
 # This script assumes SSL certificates are in the ./ssl/ directory
+#
+# Usage:
+#   ./start.sh                    # Start normally
+#   DEBUG=true ./start.sh         # Start with debug logging
+#   HOST=127.0.0.1 PORT=9000 ./start.sh  # Custom host/port
+#
+# Environment variables:
+#   HOST         - Server host (default: 0.0.0.0)
+#   PORT         - Server port (default: 8000)
+#   DEBUG        - Enable debug logging (default: false)
+#   SSL_CERT_PATH - Path to SSL certificate (default: ./ssl/fullchain.pem)
+#   SSL_KEY_PATH  - Path to SSL private key (default: ./ssl/privkey.pem)
 
 set -e
 
@@ -9,6 +21,7 @@ HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 SSL_CERT_PATH="${SSL_CERT_PATH:-./ssl/fullchain.pem}"
 SSL_KEY_PATH="${SSL_KEY_PATH:-./ssl/privkey.pem}"
+DEBUG="${DEBUG:-false}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -36,6 +49,13 @@ if ! python -c "import fastmcp" 2>/dev/null; then
     pip install fastmcp
 fi
 
+# Prepare debug argument
+DEBUG_ARG=""
+if [[ "$DEBUG" == "true" ]]; then
+    DEBUG_ARG="--debug"
+    echo -e "${YELLOW}🐛 Debug mode enabled - HTTP requests/responses will be logged${NC}"
+fi
+
 # Check if SSL certificates exist
 if [[ -f "$SSL_CERT_PATH" && -f "$SSL_KEY_PATH" ]]; then
     echo -e "${GREEN}SSL certificates found. Starting server with HTTPS...${NC}"
@@ -46,7 +66,8 @@ if [[ -f "$SSL_CERT_PATH" && -f "$SSL_KEY_PATH" ]]; then
         --host "$HOST" \
         --port "$PORT" \
         --ssl-cert "$SSL_CERT_PATH" \
-        --ssl-key "$SSL_KEY_PATH"
+        --ssl-key "$SSL_KEY_PATH" \
+        $DEBUG_ARG
 else
     echo -e "${YELLOW}SSL certificates not found at:${NC}"
     echo -e "${YELLOW}  - Certificate: $SSL_CERT_PATH${NC}"
@@ -57,5 +78,6 @@ else
     # Start server without SSL
     python server.py \
         --host "$HOST" \
-        --port "$PORT"
+        --port "$PORT" \
+        $DEBUG_ARG
 fi
